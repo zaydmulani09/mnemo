@@ -1,0 +1,10 @@
+/target
+*.db
+*.db-shm
+*.db-wal
+.env
+__pycache__/
+*.pyc
+dist/
+*.egg-info/
+.DS_Store
