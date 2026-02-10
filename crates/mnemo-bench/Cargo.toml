@@ -1,0 +1,19 @@
+[package]
+name = "mnemo-bench"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "mnemo-bench"
+path = "src/main.rs"
+
+[dependencies]
+mnemo-core = { path = "../mnemo-core" }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+tempfile = { workspace = true }
+colored = "2.1"
