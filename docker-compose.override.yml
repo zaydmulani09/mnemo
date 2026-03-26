@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  mnemo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_LOG=mnemo=debug
+    volumes:
+      - mnemo-data:/data
+      - ./mnemo.toml:/mnemo.toml:ro

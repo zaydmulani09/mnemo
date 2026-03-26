@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  mnemo:
+    build: .
+    container_name: mnemo
+    ports:
+      - "8080:8080"
+    volumes:
+      - mnemo-data:/data
+    environment:
+      - MNEMO_DB_PATH=/data/mnemo.db
+      - MNEMO_PORT=8080
+      - MNEMO_LLM_BASE_URL=http://ollama:11434/v1
+      - MNEMO_LLM_MODEL=llama3
+      - MNEMO_LLM_API_KEY=ollama
+      - MNEMO_LLM_PROVIDER=ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/mnemo-api", "--health-check"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mnemo-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  mnemo-data:
+  ollama-data:

@@ -1,0 +1,11 @@
+target/
+.git/
+*.db
+*.db-shm
+*.db-wal
+.env
+sdk/python/__pycache__/
+sdk/python/*.egg-info/
+sdk/python/dist/
+sdk/python/.pytest_cache/
+PROMPT_ENGINEER_HANDOFF.md
