@@ -1,0 +1,12 @@
+db_path = "mnemo.db"
+port = 8080
+
+[llm]
+provider = "ollama"
+base_url = "http://localhost:11434/v1"
+model = "llama3"
+api_key = "ollama"
+timeout_secs = 30
+max_retries = 3
+max_tokens = 2048
+temperature = 0.1
