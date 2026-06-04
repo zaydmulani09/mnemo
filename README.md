@@ -13,7 +13,10 @@
 
 ## What is mnemo?
 
-Most LLMs forget everything the moment a conversation ends. mnemo fixes that.
+LLM apps built on custom pipelines have no persistent memory between
+sessions. mnemo is a local sidecar that extracts entities, builds a
+knowledge graph, and injects scored context back into your prompts —
+no cloud, no Python runtime, no vendor lock-in.
 
 mnemo is a sidecar service that watches every conversation you feed it, extracts named entities and relationships using an LLM, builds a persistent knowledge graph in SQLite, and injects relevant context back into future prompts — automatically, in under 50ms. It works with **Ollama** (fully local, free), OpenAI, Anthropic, or any OpenAI-compatible API. It ships as a single static binary with zero cloud dependency.
 
@@ -38,6 +41,31 @@ mnemo is a sidecar service that watches every conversation you feed it, extracts
 3. Entities are deduplicated by name+type, aliases are merged, and everything is written to SQLite. The in-memory petgraph is updated atomically.
 4. On POST `/retrieve`, mnemo runs a 6-stage pipeline: full-text chunk search → entity name search → graph expansion (BFS over the knowledge graph) → relation filter → score+rank → assemble a `context_prompt` string.
 5. You inject `context_prompt` into your LLM's system prompt. Done.
+
+---
+
+## Why mnemo
+
+There are a lot of AI memory tools. Here's what makes mnemo different:
+
+| | mnemo | Most alternatives |
+|---|---|---|
+| **Runtime** | Single Rust binary | Python daemon |
+| **Storage** | SQLite, survives restarts | In-memory or cloud |
+| **Graph layer** | petgraph, multi-hop traversal | None |
+| **Cloud dependency** | Zero | Required or optional |
+| **LLM backend** | Any OpenAI-compatible | Often locked to one |
+| **Retrieval** | Scored + ranked, graph-expanded | Naive context dump |
+
+**mnemo is not for everyone.** If you're using a managed agent
+harness that handles memory for you, you don't need it. mnemo
+is for developers building custom LLM pipelines who need
+persistent, structured, local memory they fully control.
+
+The graph layer is the real differentiator — entities are
+deduplicated across sessions, relationships are weighted and
+traversed at query time, and graph-expanded results score at
+0.5x so direct matches always rank higher than inferred ones.
 
 ---
 
