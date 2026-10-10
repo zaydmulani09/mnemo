@@ -196,4 +196,4 @@ Configuration is loaded in this precedence order (highest wins):
 2. **TOML config file** — passed via `--config path/to/config.toml`
 3. **Compiled-in defaults** — Ollama at `localhost:11434`, port 8080, `mnemo.db`
 
-`MnemoConfig::from_env_or_file()` tries env vars first, then falls back to the TOML file if `--config` was provided. The active source is stored in `AppState.config_source` and returned in `GET /health` as `config_source: "env"` or `config_source: "file:path"`.
+`MnemoConfig::from_env_or_file()` loads the TOML file when `--config` is provided (a leading `~` is expanded; any field may be omitted and falls back to its default) and otherwise reads env vars. A `--config` file that can't be read or parsed is a startup error, not a silent fallback to env. The active source is stored in `AppState.config_source` and returned in `GET /health` as `config_source: "env"` or `config_source: "file:path"`.

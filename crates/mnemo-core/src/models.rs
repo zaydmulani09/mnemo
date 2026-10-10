@@ -86,6 +86,7 @@ pub struct ExtractionResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct RetrievalQuery {
     pub text: String,
     pub session_id: Option<String>,
@@ -308,6 +309,17 @@ mod tests {
         assert!(q.include_graph);
         assert_eq!(q.graph_depth, 2);
         assert!(q.session_id.is_none());
+    }
+
+    #[test]
+    fn retrieval_query_partial_json_uses_defaults() {
+        let q: RetrievalQuery =
+            serde_json::from_str(r#"{"text": "Alice", "include_graph": true, "graph_depth": 1}"#)
+                .unwrap();
+        assert_eq!(q.text, "Alice");
+        assert_eq!(q.graph_depth, 1);
+        assert_eq!(q.max_chunks, 10);
+        assert_eq!(q.max_entities, 20);
     }
 
     #[test]

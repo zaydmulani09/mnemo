@@ -48,17 +48,45 @@ impl Default for ProviderType {
 
 // ── LlmConfig ────────────────────────────────────────────────────────────────
 
+// Every field is optional in TOML. `base_url` and `model` default to empty and
+// are filled from the provider's defaults by `fill_provider_defaults`, so that
+// e.g. `provider = "openai"` alone doesn't inherit Ollama's URL and model.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmConfig {
+    #[serde(default)]
     pub provider: ProviderType,
+    #[serde(default)]
     pub base_url: String,
+    #[serde(default)]
     pub model: String,
+    #[serde(default = "default_api_key")]
     pub api_key: String,
+    #[serde(default = "default_timeout_secs")]
     pub timeout_secs: u64,
+    #[serde(default = "default_max_retries")]
     pub max_retries: u32,
+    #[serde(default = "default_max_tokens")]
     pub max_tokens: u32,
+    #[serde(default = "default_temperature")]
     pub temperature: f32,
+    #[serde(default)]
     pub system_prompt_prefix: Option<String>,
+}
+
+fn default_api_key() -> String {
+    "ollama".to_string()
+}
+fn default_timeout_secs() -> u64 {
+    30
+}
+fn default_max_retries() -> u32 {
+    3
+}
+fn default_max_tokens() -> u32 {
+    2048
+}
+fn default_temperature() -> f32 {
+    0.1
 }
 
 impl Default for LlmConfig {
@@ -68,11 +96,11 @@ impl Default for LlmConfig {
             base_url: provider.default_base_url().to_string(),
             model: provider.default_model().to_string(),
             provider,
-            api_key: "ollama".to_string(),
-            timeout_secs: 30,
-            max_retries: 3,
-            max_tokens: 2048,
-            temperature: 0.1,
+            api_key: default_api_key(),
+            timeout_secs: default_timeout_secs(),
+            max_retries: default_max_retries(),
+            max_tokens: default_max_tokens(),
+            temperature: default_temperature(),
             system_prompt_prefix: None,
         }
     }
@@ -131,6 +159,16 @@ impl LlmConfig {
         }
     }
 
+    /// Fills `base_url` and `model` from the provider's defaults when left empty.
+    pub fn fill_provider_defaults(&mut self) {
+        if self.base_url.is_empty() {
+            self.base_url = self.provider.default_base_url().to_string();
+        }
+        if self.model.is_empty() {
+            self.model = self.provider.default_model().to_string();
+        }
+    }
+
     pub fn validate(&self) -> Result<()> {
         if self.provider.requires_api_key() && self.api_key == "ollama" {
             return Err(MnemoError::Config(format!(
@@ -151,6 +189,7 @@ impl LlmConfig {
 // ── MnemoConfig (TOML-backed full config) ────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct MnemoConfig {
     pub db_path: String,
     pub port: u16,
@@ -169,21 +208,27 @@ impl Default for MnemoConfig {
 
 impl MnemoConfig {
     pub fn from_file(path: &str) -> Result<Self> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| MnemoError::Config(format!("cannot read config file: {}", e)))?;
-        toml::from_str(&content)
-            .map_err(|e| MnemoError::Config(format!("invalid TOML config: {}", e)))
+        let path = expand_tilde(path);
+        let content = std::fs::read_to_string(&path).map_err(|e| {
+            MnemoError::Config(format!("cannot read config file {}: {}", path.display(), e))
+        })?;
+        let mut cfg: Self = toml::from_str(&content)
+            .map_err(|e| MnemoError::Config(format!("invalid TOML config: {}", e)))?;
+        cfg.llm.fill_provider_defaults();
+        Ok(cfg)
     }
 
-    pub fn from_env_or_file(file_path: Option<&str>) -> Self {
+    /// Loads from `file_path` when given, otherwise from `MNEMO_*` env vars.
+    /// An explicitly requested file that can't be read or parsed is an error
+    /// rather than a silent fallback to env defaults.
+    pub fn from_env_or_file(file_path: Option<&str>) -> Result<Self> {
         if let Some(path) = file_path {
-            if std::path::Path::new(path).exists() {
-                match Self::from_file(path) {
-                    Ok(cfg) => return cfg,
-                    Err(e) => tracing::warn!("config file error: {}, falling back to env", e),
-                }
-            }
+            return Self::from_file(path);
         }
+        Ok(Self::from_env())
+    }
+
+    pub fn from_env() -> Self {
         Self {
             db_path: std::env::var("MNEMO_DB_PATH").unwrap_or_else(|_| "mnemo.db".into()),
             port: std::env::var("MNEMO_PORT")
@@ -210,6 +255,18 @@ max_tokens = 2048
 temperature = 0.1
 "#
     }
+}
+
+/// Expands a leading `~` to `$HOME`. Shells don't expand `~` inside quotes,
+/// so `--config "~/.mnemo/mnemo.toml"` arrives here literally.
+pub fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if path == "~" || path.starts_with("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            let rest = path.trim_start_matches('~').trim_start_matches('/');
+            return std::path::PathBuf::from(home).join(rest);
+        }
+    }
+    std::path::PathBuf::from(path)
 }
 
 // ── LlmProvider ──────────────────────────────────────────────────────────────
@@ -548,6 +605,54 @@ temperature = 0.1
             MnemoError::Config(_) => {}
             e => panic!("expected Config error, got {:?}", e),
         }
+    }
+
+    #[test]
+    fn test_mnemo_config_partial_toml_uses_defaults() {
+        let toml = r#"
+[llm]
+provider = "custom"
+base_url = "https://openrouter.ai/api/v1"
+model = "qwen/qwen3.6-flash"
+api_key = "sk-or-test"
+"#;
+        let path = std::env::temp_dir().join("mnemo_partial_config_test.toml");
+        std::fs::write(&path, toml).unwrap();
+        let cfg = MnemoConfig::from_file(path.to_str().unwrap()).unwrap();
+        std::fs::remove_file(&path).ok();
+
+        assert_eq!(cfg.db_path, "mnemo.db");
+        assert_eq!(cfg.port, 8080);
+        assert_eq!(cfg.llm.provider, ProviderType::Custom);
+        assert_eq!(cfg.llm.base_url, "https://openrouter.ai/api/v1");
+        assert_eq!(cfg.llm.model, "qwen/qwen3.6-flash");
+        assert_eq!(cfg.llm.api_key, "sk-or-test");
+        assert_eq!(cfg.llm.timeout_secs, 30);
+        assert_eq!(cfg.llm.max_tokens, 2048);
+    }
+
+    #[test]
+    fn test_mnemo_config_provider_only_fills_provider_defaults() {
+        let mut cfg: MnemoConfig = toml::from_str("[llm]\nprovider = \"openai\"\n").unwrap();
+        cfg.llm.fill_provider_defaults();
+        assert_eq!(cfg.llm.base_url, "https://api.openai.com/v1");
+        assert_eq!(cfg.llm.model, "gpt-4o-mini");
+    }
+
+    #[test]
+    fn test_mnemo_config_explicit_missing_file_is_error() {
+        assert!(MnemoConfig::from_env_or_file(Some("nonexistent_config_file_xyz.toml")).is_err());
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(
+            expand_tilde("~/.mnemo/mnemo.toml"),
+            std::path::PathBuf::from(&home).join(".mnemo/mnemo.toml")
+        );
+        assert_eq!(expand_tilde("/etc/mnemo.toml"), std::path::PathBuf::from("/etc/mnemo.toml"));
+        assert_eq!(expand_tilde("~user/x"), std::path::PathBuf::from("~user/x"));
     }
 
     #[test]
