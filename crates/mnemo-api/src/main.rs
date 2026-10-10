@@ -367,12 +367,17 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|i| args.get(i + 1))
         .cloned();
 
+    let mnemo_config = MnemoConfig::from_env_or_file(config_path.as_deref())?;
     let config_source = config_path
         .as_deref()
-        .map(|p| format!("file:{}", p))
+        .map(|p| format!("file:{}", mnemo_core::provider::expand_tilde(p).display()))
         .unwrap_or_else(|| "env".to_string());
-
-    let mnemo_config = MnemoConfig::from_env_or_file(config_path.as_deref());
+    tracing::info!(
+        "config loaded from {} (provider: {:?}, model: {})",
+        config_source,
+        mnemo_config.llm.provider,
+        mnemo_config.llm.model
+    );
     let port = mnemo_config.port;
 
     let db = Arc::new(Database::new(&mnemo_config.db_path).await?);
